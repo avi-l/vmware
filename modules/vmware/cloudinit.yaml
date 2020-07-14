@@ -1,0 +1,170 @@
+#cloud-config
+
+bootcmd:
+  #- /some/command.sh
+runcmd:
+  - /etc/init.d/sssd stop
+
+users:
+  - name: ansible
+    gecos: ansible config user
+    group: ansible
+    shell: /bin/bash
+    ssh-authorized-keys:
+    - "some ssh key"
+
+write_files:
+  - path: /etc/apt/sources.list
+    owner: root:root
+    permissions: '0644'
+    content: |
+        deb [trusted=yes] http://customrepo/repos/ubuntu/ bionic main universe restricted
+        deb [trusted=yes] http://customrepo/repos/ubuntu/ bionic-updates main universe restricted
+        deb [trusted=yes] http://customrepo/repos/ubuntu/ bionic-security main universe restricted
+
+  - path: /etc/ssh/sshd_config
+    owner: root:root
+    permissions: '0544'
+    content: |
+        PermitRootLogin yes
+        PubkeyAuthentication yes
+        AuthorizedKeysCommand /usr/local/bin/get-authorized-keys.py
+        PasswordAuthentication yes
+        GSSAPIAuthentication no
+        GSSAPICleanupCredentials no
+        ChallengeResponseAuthentication no
+        AuthorizedKeysFile      .ssh/authorized_keys .ssh/authorized_keys2
+        AuthorizedKeysCommandUser nobody
+        PermitEmptyPasswords no
+        ChallengeResponseAuthentication no
+        UsePAM yes
+        X11Forwarding yes
+        PrintMotd no
+        AcceptEnv LANG LC_*
+        Subsystem       sftp    /usr/lib/openssh/sftp-server
+        PubkeyAcceptedKeyTypes=+ssh-dss
+
+  - path: /etc/pam.d/sshd
+    owner: root:root
+    permissions: '0644'
+    content: |
+        @include common-auth
+        account    required     pam_nologin.so
+        account  required     pam_access.so
+        @include common-account
+        session [success=ok ignore=ignore module_unknown=ignore default=bad]        pam_selinux.so close
+        session    required     pam_loginuid.so
+        session    optional     pam_keyinit.so force revoke
+        @include common-session
+        session    optional     pam_motd.so  motd=/run/motd.dynamic
+        session    optional     pam_motd.so noupdate
+        session    required     pam_limits.so
+        session    optional      pam_mkhomedir.so
+        session    required     pam_env.so user_readenv=1 envfile=/etc/default/locale
+        session [success=ok ignore=ignore module_unknown=ignore default=bad]        pam_selinux.so open
+        @include common-password
+
+  - path: /etc/sssd/sssd.conf
+    owner: root:root
+    permissions: '0600'
+    content: |
+        [domain/ldapproxy]
+        debug_level = 0x00F0
+        ldap_id_use_start_tls = True
+        cache_credentials = True
+        id_provider = ldap
+        auth_provider = ldap
+        #allow everyone...
+        access_provider = permit
+        chpass_provider = none
+        ldap_uri = ldaps://ldap_url.domain.com/
+        ldap_tls_reqcert = demand
+        ldap_tls_cacertdir = /etc/openldap/cacerts
+        ldap_search_base = cn=data,dc=lab,dc=custom_domain,dc=com
+        ldap_user_search_base = ou=People,cn=data,dc=lab,dc=custom_domain,dc=com
+        ldap_group_search_base = ou=Groups,cn=data,dc=lab,dc=custom_domain,dc=com
+        ldap_enumeration_refresh_timeout = 300
+        entry_cache_timeout=1800
+        enumerate = False
+        ldap_connection_expire_timeout = 60
+        ldap_default_authtok = ***SNIPPED****
+        ldap_default_authtok_type = password
+        ldap_default_bind_dn = uid=readonly-service1,ou=service,cn=data,dc=lab,dc=custom_domain,dc=com
+
+        [sssd]
+        services = nss, pam
+        config_file_version = 2
+        domains = ldapproxy
+
+        [nss]
+
+        [pam]
+        debug_level = 0x00F0
+        offline_credentials_expiration=1
+
+        [sudo]
+
+        [autofs]
+
+        [ssh]
+
+  - path: /etc/security/access.conf
+        chpass_provider = none
+        ldap_uri = ldaps://ldap_url.domain.com/
+        ldap_tls_reqcert = demand
+        ldap_tls_cacertdir = /etc/openldap/cacerts
+        ldap_search_base = cn=data,dc=lab,dc=,dc=com
+        ldap_user_search_base = ou=People,cn=data,dc=lab,dc=custom_domain,dc=com
+        ldap_group_search_base = ou=Groups,cn=data,dc=lab,dc=custom_domain,dc=com
+        ldap_enumeration_refresh_timeout = 300
+        entry_cache_timeout=1800
+        enumerate = False
+        ldap_connection_expire_timeout = 60
+        ldap_default_authtok = NEED TO CHANGE
+        ldap_default_authtok_type = password
+        ldap_default_bind_dn = uid=readonly-service1,ou=service,cn=data,dc=lab,dc=custom_domain,dc=com
+
+        [sssd]
+        services = nss, pam
+        config_file_version = 2
+        domains = ldapproxy
+
+        [nss]
+
+        [pam]
+        debug_level = 0x00F0
+        offline_credentials_expiration=1
+
+        [sudo]
+
+        [autofs]
+
+        [ssh]
+
+  - path: /etc/security/access.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+        + : root : ALL
+        + : lab-localauth : ALL
+        + : ALL : ALL
+
+  - path: /etc/sudoers
+    owner: root:root
+    permissions: '0440'
+    content: |
+        Defaults                requiretty
+        Defaults:SYSADMIN       timestamp_timeout=15
+
+        Defaults    env_reset
+        Defaults    env_keep = "COLORS DISPLAY HOSTNAME HISTSIZE INPUTRC KDEDIR \
+                                LS_COLORS MAIL PS1 PS2 QTDIR USERNAME \
+                                LANG LC_ADDRESS LC_CTYPE LC_COLLATE LC_IDENTIFICATION \
+                                LC_MEASUREMENT LC_MESSAGES LC_MONETARY LC_NAME LC_NUMERIC \
+                                LC_PAPER LC_TELEPHONE LC_TIME LC_ALL LANGUAGE LINGUAS \
+                                _XKB_CHARSET XAUTHORITY PATH"
+
+        User_Alias   SYSADMIN=root,%custom_domainlabs-sysadmin-ssh-users
+        SYSADMIN        ALL = (ALL) ALL
+        User_Alias   ANSIBLE=ansible
+        ANSIBLE        ALL = (ALL) NOPASSWD: ALL
